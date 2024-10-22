@@ -15,6 +15,7 @@ using TSLib.Full;
 using System.Reflection.Emit;
 using System.Threading;
 using TS3AudioBot.CommandSystem;
+using Microsoft.Extensions.Configuration;
 
 namespace MusicBotPlugin
 {
@@ -51,24 +52,72 @@ namespace MusicBotPlugin
 		public string qrimg { get; set; }
 	}
 
-
-	class Porter
+	public class JsonConfigData
 	{
-		private IniConfig iniConfig;
+		public string api_address { get; set; }
+		public string cookies { get; set; }
+	}
 
-		private string cookies;
-		private readonly string apiAddress;
+	public class JsonConfig
+	{
+		private JsonConfigData data;
+		private static readonly string ConfigurationPath = "config.json";
 
-		public Porter(IniConfig iniConfig)
+		public JsonConfig()
 		{
-			this.iniConfig = iniConfig;
-			apiAddress = iniConfig.Read("api_address", "basic");
+		}
+
+		public string GetApiAddress()
+		{
+			Read();
+			return data.api_address;
+		}
+
+		public string GetCookies()
+		{
+			Read();
+			return data.cookies;
 		}
 
 		public void SetCookies(string cookies)
 		{
-			this.cookies = cookies;
-			iniConfig.Write("cookies", cookies, "basic");
+			data.cookies = cookies;
+			Write();
+		}
+
+		private void Read()
+		{
+			var reader = new StreamReader(ConfigurationPath);
+			string json = reader.ReadToEnd();
+			data = JsonSerializer.Deserialize<JsonConfigData>(json);
+			reader.Close();
+		}
+
+		private void Write()
+		{
+			string json = JsonSerializer.Serialize(data);
+			var writer = new StreamWriter(ConfigurationPath);
+			writer.Write(json);
+			writer.Close();
+		}
+	}
+
+
+	class Porter
+	{
+		private JsonConfig jsonConfig;
+
+		private readonly string apiAddress;
+
+		public Porter(JsonConfig jsonConfig)
+		{
+			this.jsonConfig = jsonConfig;
+			apiAddress = jsonConfig.GetApiAddress();
+		}
+
+		public void SetCookies(string cookies)
+		{
+			jsonConfig.SetCookies(cookies);
 		}
 
 		private static bool MatchIP(string ip)
@@ -164,49 +213,6 @@ namespace MusicBotPlugin
 
 	}
 
-	class IniConfig
-	{
-		private readonly string path;
-
-		[DllImport("kernel32", CharSet = CharSet.Unicode)]
-		static extern long WritePrivateProfileString(string Section, string Key, string Value, string FilePath);
-
-		[DllImport("kernel32", CharSet = CharSet.Unicode)]
-		static extern int GetPrivateProfileString(string Section, string Key, string Default, StringBuilder RetVal, int Size, string FilePath);
-
-		public IniConfig()
-		{
-			path = new FileInfo("netcloud.ini").FullName;
-		}
-
-		public string Read(string Key, string Section)
-		{
-			var RetVal = new StringBuilder(6000);
-			GetPrivateProfileString(Section, Key, "", RetVal, 6000, path);
-			return RetVal.ToString();
-		}
-
-		public void Write(string Key, string Value, string Section)
-		{
-			WritePrivateProfileString(Section, Key, Value, path);
-		}
-
-		public void DeleteKey(string Key, string Section)
-		{
-			Write(Key, null, Section);
-		}
-
-		public void DeleteSection(string Section = null)
-		{
-			Write(null, null, Section);
-		}
-
-		public bool KeyExists(string Key, string Section)
-		{
-			return Read(Key, Section).Length > 0;
-		}
-	}
-
 	public class MusicBotPlugin : IBotPlugin
 	{
 		private static Porter porter;
@@ -217,7 +223,7 @@ namespace MusicBotPlugin
 
 		public void Initialize()
 		{
-			IniConfig config = new IniConfig();
+			JsonConfig config = new JsonConfig();
 			porter = new Porter(config);
 		}
 		public void Dispose() => throw new NotImplementedException();
