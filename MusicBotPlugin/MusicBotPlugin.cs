@@ -1,21 +1,15 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
 using TS3AudioBot;
-using TS3AudioBot.Audio;
 using TS3AudioBot.Plugins;
 using System.Text.RegularExpressions;
-using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
-using FileInfo = System.IO.FileInfo;
 using System.Threading.Tasks;
 using TSLib.Full;
-using System.Reflection.Emit;
 using System.Threading;
 using TS3AudioBot.CommandSystem;
-using Microsoft.Extensions.Configuration;
 
 namespace MusicBotPlugin
 {
@@ -103,16 +97,21 @@ namespace MusicBotPlugin
 	}
 
 
-	class Porter
+	public class Porter
 	{
 		private JsonConfig jsonConfig;
-
+		private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
 		private readonly string apiAddress;
 
 		public Porter(JsonConfig jsonConfig)
 		{
 			this.jsonConfig = jsonConfig;
 			apiAddress = jsonConfig.GetApiAddress();
+		}
+
+		public Porter(string apiAddress)
+		{
+			this.apiAddress = apiAddress;
 		}
 
 		public string GetApiAddress()
@@ -126,19 +125,9 @@ namespace MusicBotPlugin
 			jsonConfig.SetCookies(cookies);
 		}
 
-		private static bool MatchIP(string ip)
-		{
-			if (!string.IsNullOrEmpty(ip))
-			{
-				//判断是否为IP
-				return Regex.IsMatch(ip, @"^((2[0-4]\d|25[0-5]|[01]?\d\d?)\.){3}(2[0-4]\d|25[0-5]|[01]?\d\d?)$");
-			}
-			return false;
-		}
 		private string Url(string apiPath)
 		{
 			string ip = apiAddress + apiPath;
-			Debug.Assert(MatchIP(ip));
 			return ip;
 		}
 
@@ -174,21 +163,34 @@ namespace MusicBotPlugin
 			return JsonSerializer.Deserialize<T>(json);
 		}
 
+		public string GetLoginKeyUrl()
+		{
+			return Url("/login/qr/key");
+		}
+
 		public string GetLoginKey()
 		{
-			return Deserialize<LoginKey>(Response(Url("/login/qr/key"))).data.unikey;
+			return Deserialize<LoginKey>(Response(GetLoginKeyUrl())).data.unikey;
+		}
+
+		public string GetLoginQrUrl(string key)
+		{
+			return ParamEnd(Param(ParamUrl("/login/qr/create"), "key", key), "qrimg", "true");
 		}
 
 		public string GetLoginQr(string key)
 		{
-			return Deserialize<LoginQr>(
-						Response(
-							ParamEnd(Param(ParamUrl("/login/qr/create"), "key", key), "qrimg", "true"))).data.qrimg;
+			return Deserialize<LoginQr>(Response(GetLoginQrUrl(key))).data.qrimg;
+		}
+
+		public string GetLoginStatusUrl(string key)
+		{
+			return ParamEnd(ParamUrl("/login/qr/check"), "key", key);
 		}
 
 		public (int, string) GetLoginStatus(string key)
 		{
-			var status = Deserialize<LoginStatus>(Response(ParamEnd(ParamUrl("/login/qr/check"), "key", key)));
+			var status = Deserialize<LoginStatus>(Response(GetLoginStatusUrl(key)));
 			return (status.code, status.cookie);
 		}
 	}
@@ -235,15 +237,13 @@ namespace MusicBotPlugin
 		{
 			JsonConfig config = new JsonConfig();
 			porter = new Porter(config);
-
-			Console.WriteLine("Api address = " + porter);
 		}
 		public void Dispose() => throw new NotImplementedException();
 
 		[Command("music login")]
 		public static async Task<string> QrLogin(Ts3Client client, TsFullClient fullClient)
 		{
-			Console.WriteLine("Execute command QrLogin");
+			Console.WriteLine("Command: !music login");
 
 			var unikey = porter.GetLoginKey();
 			var qrImg = porter.GetLoginQr(unikey);
@@ -264,6 +264,7 @@ namespace MusicBotPlugin
 				case 800:
 					await fullClient.DeleteAvatar();
 					await client.SendChannelMessage("登录二维码已过期");
+					Console.WriteLine("Login Qrcode expired");
 					return "登录二维码已过期";
 				case 803:
 					//TODO: replace with default avator
@@ -271,14 +272,16 @@ namespace MusicBotPlugin
 					porter.SetCookies(result.Item2);
 
 					await client.SendChannelMessage("登录成功");
+					Console.WriteLine("Login success!");
 					return "登录成功";
 				default:
-					Thread.Sleep(1000);
+					Thread.Sleep(500);
 					if ((DateTime.Now.Second - start) > 300)
 					{
 						//TODO: make wait time configuable
 						await fullClient.DeleteAvatar();
 						await client.SendChannelMessage("等待时间超过5分钟,取消登录");
+						Console.WriteLine("Login timeout!");
 						return "等待时间超过5分钟,取消登录";
 					}
 					else break;
