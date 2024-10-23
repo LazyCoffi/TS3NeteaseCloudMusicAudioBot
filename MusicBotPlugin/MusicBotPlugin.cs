@@ -115,6 +115,12 @@ namespace MusicBotPlugin
 			apiAddress = jsonConfig.GetApiAddress();
 		}
 
+		public string GetApiAddress()
+		{
+			return apiAddress;
+		}
+
+
 		public void SetCookies(string cookies)
 		{
 			jsonConfig.SetCookies(cookies);
@@ -142,6 +148,10 @@ namespace MusicBotPlugin
 		}
 
 		private string Param(string path, string key, string value)
+		{
+			return path + key + "=" + value + "&";
+		}
+		private string ParamEnd(string path, string key, string value)
 		{
 			return path + key + "=" + value;
 		}
@@ -173,12 +183,12 @@ namespace MusicBotPlugin
 		{
 			return Deserialize<LoginQr>(
 						Response(
-							Param(Param(ParamUrl("/login/qr/create"), "key", key), "qrimg", "true"))).data.qrimg;
+							ParamEnd(Param(ParamUrl("/login/qr/create"), "key", key), "qrimg", "true"))).data.qrimg;
 		}
 
 		public (int, string) GetLoginStatus(string key)
 		{
-			var status = Deserialize<LoginStatus>(Response(Param(ParamUrl("/login/qr/check"), "key", key)));
+			var status = Deserialize<LoginStatus>(Response(ParamEnd(ParamUrl("/login/qr/check"), "key", key)));
 			return (status.code, status.cookie);
 		}
 	}
@@ -225,12 +235,16 @@ namespace MusicBotPlugin
 		{
 			JsonConfig config = new JsonConfig();
 			porter = new Porter(config);
+
+			Console.WriteLine("Api address = " + porter);
 		}
 		public void Dispose() => throw new NotImplementedException();
 
 		[Command("music login")]
 		public static async Task<string> QrLogin(Ts3Client client, TsFullClient fullClient)
 		{
+			Console.WriteLine("Execute command QrLogin");
+
 			var unikey = porter.GetLoginKey();
 			var qrImg = porter.GetLoginQr(unikey);
 			await client.SendChannelMessage("生成登录二维码");
@@ -240,6 +254,7 @@ namespace MusicBotPlugin
 			await fullClient.UploadAvatar(stream);
 			await client.ChangeDescription("使用网易云音乐APP扫码登录");
 
+			Console.WriteLine("Wait for scanning QrCode");
 			var start = DateTime.Now.Second;
 			while (true)
 			{
